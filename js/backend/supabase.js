@@ -71,7 +71,7 @@ export async function createBackend(cfg) {
     },
 
     async listResources() {
-      return check(await sb.from('resources').select('*').order('kind').order('name'));
+      return check(await sb.from('resources').select('*').order('kind').order('code').order('name'));
     },
     async saveResource(resource) {
       const { id, created_at, ...rest } = resource;

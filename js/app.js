@@ -33,6 +33,7 @@ const ICON = {
 };
 
 // ---------- Small helpers ----------
+const showDlg = () => { if (!dlg.open) dlg.showModal(); dlg.querySelector('.sheet-body')?.scrollTo(0, 0); };
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const errMsg = (e) => (e && e.message) || String(e || 'Something went wrong.');
 const pref = {
@@ -73,7 +74,12 @@ const person = (id) => state.profiles.get(id) || { id, display_name: 'Former mem
 const resById = (id) => state.resources.find((r) => r.id === Number(id));
 const initials = (name = '') => name.split(/\s+/).filter(Boolean).slice(0, 2).map((s) => s[0].toUpperCase()).join('') || '?';
 const firstName = (name = '') => name.split(/\s+/)[0] || name;
-const kinds = () => [...new Set(state.resources.map((r) => r.kind))].sort();
+// Robots first, then computers, then any other type, as in the lab's resource list.
+const KIND_ORDER = ['robot', 'computer'];
+const kindRank = (k) => { const i = KIND_ORDER.indexOf(String(k).toLowerCase()); return i < 0 ? KIND_ORDER.length : i; };
+const byKind = (a, b) => kindRank(a) - kindRank(b) || String(a).localeCompare(String(b));
+const sortResources = (list) => list.sort((a, b) => byKind(a.kind, b.kind) || (a.code || '').localeCompare(b.code || '', undefined, { numeric: true }) || a.name.localeCompare(b.name));
+const kinds = () => [...new Set(state.resources.map((r) => r.kind))].sort(byKind);
 const findBooking = (id) => [...state.bookings, ...state.mine].find((b) => String(b.id) === String(id));
 const bookers = () => [...state.profiles.values()].filter((p) => p.role !== 'pending');
 const avatar = (p) => `<span class="avatar" style="--h:${L.hueFor(p.id)}" aria-hidden="true">${esc(initials(p.display_name))}</span>`;
@@ -84,7 +90,8 @@ const statusPill = (r) => r.status === 'available' ? ''
 async function boot() {
   try {
     const useSupabase = Boolean(CONFIG.SUPABASE_URL && CONFIG.SUPABASE_KEY);
-    const mod = useSupabase ? await import('./backend/supabase.js') : await import('./backend/demo.js');
+    // The ?v= suffix makes browsers fetch the new file after an update.
+    const mod = useSupabase ? await import('./backend/supabase.js?v=4') : await import('./backend/demo.js?v=4');
     state.be = await mod.createBackend(CONFIG);
   } catch (e) {
     app.innerHTML = `<div class="wrap"><div class="empty error" style="margin-top:40px"><h2>BenchBook could not start</h2><p>${esc(errMsg(e))}</p><p>Check the Supabase settings in js/config.js.</p></div></div>`;
@@ -126,10 +133,10 @@ function softRefresh() {
 function sampleBoard() {
   // Purely illustrative timeline for the sign-in page.
   const rows = [
-    ['PC-01', [[1, 4, 210], [5, 8.5, 30]]],
-    ['UR5e arm', [[0.5, 3, 140], [6, 9, 300]]],
-    ['Franka FR3', [[2, 6.5, 30]]],
-    ['TurtleBot B', null],
+    ['R02 FR3 - Flora', [[1, 4, 210], [5, 8.5, 30]]],
+    ['R04 UR7e', [[0.5, 3, 140], [6, 9, 300]]],
+    ['C01 Hadrian', [[2, 6.5, 30]]],
+    ['C03 Augustus', null],
   ];
   const ticks = [];
   for (let h = RULES.dayStart; h <= RULES.dayEnd; h += 2) ticks.push(`<span>${L.pad(h)}:00</span>`);
@@ -245,7 +252,7 @@ function renderSetPassword() {
     </div>
     <footer><span class="spacer"></span><button class="btn primary" type="submit">Save password</button></footer>
   </form>`;
-  dlg.showModal();
+  showDlg();
   dlg.querySelector('#pw-form').addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const pw = dlg.querySelector('#pw-new').value;
@@ -294,7 +301,7 @@ function currentView() {
 async function loadBase() {
   const [profiles, resources] = await Promise.all([state.be.listProfiles(), state.be.listResources()]);
   state.profiles = new Map(profiles.map((p) => [p.id, p]));
-  state.resources = resources;
+  state.resources = sortResources(resources);
   const fresh = state.profiles.get(me());
   if (fresh) state.user = { ...state.user, ...fresh };
 }
@@ -343,7 +350,9 @@ function nowLine(dayKey, axis) {
   const m = L.minuteOfDay(now) - RULES.dayStart * 60;
   if (m < 0 || m > DAY_MIN) return '';
   const pct = m / DAY_MIN * 100;
-  return `<span class="now-line" style="${axis === 'h' ? 'left' : 'top'}:${pct}%"></span>`;
+  // Shade the part of today that has already passed, then draw the "now" line.
+  const fill = axis === 'h' ? `width:${pct}%` : `height:${pct}%`;
+  return `<span class="past-fill" style="${fill}"></span><span class="now-line" style="${axis === 'h' ? 'left' : 'top'}:${pct}%"></span>`;
 }
 
 function bookingsOn(resId, dayKey) {
@@ -351,8 +360,9 @@ function bookingsOn(resId, dayKey) {
 }
 
 function resLabel(r) {
-  return `<span class="kind-tag">${esc(r.kind)}</span>${statusPill(r)}<span class="res-name">${esc(r.name)}</span>`;
+  return `<span class="kind-tag" title="${esc(r.kind)}">${esc(r.code || r.kind)}</span>${statusPill(r)}<span class="res-name">${esc(r.name)}</span>`;
 }
+const resTitle = (r) => `Details for ${r.name}${r.description ? `: ${r.description}` : ''}`;
 
 function weekGrid(days, res) {
   const todayKey = L.dateKey(new Date());
@@ -365,7 +375,7 @@ function weekGrid(days, res) {
     </div>`).join('');
   const rows = res.map((r) => {
     const blocked = r.status !== 'available';
-    return `<div class="res-cell" title="${esc([r.location, r.description, r.status_note].filter(Boolean).join(' · '))}">${resLabel(r)}</div>` +
+    return `<button type="button" class="res-cell" data-action="open-resource" data-res="${r.id}" title="${esc(resTitle(r))}">${resLabel(r)}</button>` +
       days.map((d) => {
         const k = L.dateKey(d);
         const past = k < todayKey ? ' is-past' : '';
@@ -384,7 +394,7 @@ function dayGrid(day, res) {
   }
   return `<div class="grid-scroll"><div class="dv" style="--cols:${res.length}">
     <div class="dv-corner"></div>
-    ${res.map((r) => `<div class="dv-head">${resLabel(r)}</div>`).join('')}
+    ${res.map((r) => `<button type="button" class="dv-head" data-action="open-resource" data-res="${r.id}" title="${esc(resTitle(r))}">${resLabel(r)}</button>`).join('')}
     <div class="dv-times" aria-hidden="true"><div class="dv-times-in">${labels.join('')}</div></div>
     ${res.map((r) => `<div class="dv-col${r.status !== 'available' ? ' is-blocked' : ''}${k < L.dateKey(new Date()) ? ' is-past' : ''}" data-action="slot" data-axis="v" data-res="${r.id}" data-date="${k}">${bookingsOn(r.id, k).map((b) => blockHtml(b, 'v')).join('')}${nowLine(k, 'v')}</div>`).join('')}
   </div></div>`;
@@ -437,7 +447,7 @@ function resourceOptions(selectedId, keepId) {
   return kinds().map((k) => `<optgroup label="${esc(k)}">${state.resources.filter((r) => r.kind === k).map((r) => {
     const off = r.status !== 'available';
     const disabled = off && !isAdmin() && r.id !== keepId;
-    return `<option value="${r.id}" ${r.id === selectedId ? 'selected' : ''} ${disabled ? 'disabled' : ''}>${esc(r.name)}${off ? ` (${STATUS[r.status].label.toLowerCase()})` : ''}</option>`;
+    return `<option value="${r.id}" ${r.id === selectedId ? 'selected' : ''} ${disabled ? 'disabled' : ''}>${r.code ? `${esc(r.code)} · ` : ''}${esc(r.name)}${off ? ` (${STATUS[r.status].label.toLowerCase()})` : ''}</option>`;
   }).join('')}</optgroup>`).join('');
 }
 // ---------- Time picker ----------
@@ -558,11 +568,20 @@ function defaultSlot(dayKey) {
   return { startTime: L.hm(start), endTime: L.hm(Math.min(start + 60, RULES.dayEnd * 60)) };
 }
 
-function defaultDayKey() {
-  if (state.mode === 'day' && currentView() === 'calendar') return L.dateKey(state.anchor);
+/** The first day that still has bookable time left (today, or the next weekday). */
+function firstBookableDayKey() {
   let d = new Date();
   if (L.minuteOfDay(d) >= RULES.dayEnd * 60 - RULES.step) d = L.addDays(d, 1);
   return L.dateKey(L.nextWeekday(d));
+}
+
+function defaultDayKey() {
+  const first = firstBookableDayKey();
+  if (state.mode === 'day' && currentView() === 'calendar') {
+    const k = L.dateKey(state.anchor);
+    return k > first ? k : first;
+  }
+  return first;
 }
 
 async function openBookingForm(opts = {}) {
@@ -579,7 +598,7 @@ async function openBookingForm(opts = {}) {
   const times = b ? { startTime: L.timeOf(new Date(b.start_at)), endTime: L.timeOf(new Date(b.end_at)) }
     : (opts.startTime ? { startTime: opts.startTime, endTime: opts.endTime } : defaultSlot(dayKey));
   const owner = b ? b.user_id : me();
-  const minDate = isAdmin() ? '' : `min="${L.dateKey(now)}"`;
+  const minDate = `min="${L.dateKey(now)}"`;
   const showSeries = b && seriesFuture.length > 1 && seriesFuture.some((x) => x.id === b.id);
   form = { booking: b, seriesFuture };
 
@@ -615,7 +634,7 @@ async function openBookingForm(opts = {}) {
       <button type="submit" class="btn primary" id="bk-submit">${b ? 'Save changes' : 'Book'}</button>
     </footer>
   </form>`;
-  dlg.showModal();
+  showDlg();
   const f = dlg.querySelector('#bk-form');
   f.addEventListener('input', onFormInput);
   f.addEventListener('change', onFormInput);
@@ -699,19 +718,20 @@ async function submitBooking({ override = false, onlyFree = false } = {}) {
   if (!r) return showFeedback(errorBox(['Choose a resource.']));
 
   if (!isAdmin()) {
-    const target = form.booking;
     const slotChanged = (s) => !s.target || s.target.resource_id !== v.resourceId ||
       +new Date(s.target.start_at) !== +s.start || +new Date(s.target.end_at) !== +s.end;
     if (r.status !== 'available' && slots.some(slotChanged)) {
       return showFeedback(errorBox([`${r.name} is ${STATUS[r.status].label.toLowerCase()} and cannot be booked right now.${r.status_note ? ` (${r.status_note})` : ''}`]));
     }
-    const now = new Date();
-    const started = slots.filter((s) => s.start < now && !(s.target && +new Date(s.target.start_at) === +s.start));
-    if (started.length) {
-      return showFeedback(errorBox([started.length === slots.length || target
-        ? 'That time has already started. Pick a later time.'
-        : `${started.length} of these days are in the past. Move the first day forward.`]));
-    }
+  }
+  // Nobody, admins included, can book a time that has already started.
+  // An existing booking that is already running may keep its start time.
+  const now = new Date();
+  const started = slots.filter((s) => s.start < now && !(s.target && +new Date(s.target.start_at) === +s.start));
+  if (started.length) {
+    return showFeedback(errorBox([started.length === slots.length || form.booking
+      ? 'That time has already passed. Pick a start time from now onwards.'
+      : `${started.length} of these days are in the past. Move the first day to today or later.`]));
   }
 
   setBusy(true);
@@ -811,20 +831,75 @@ function openBookingInfo(b) {
   const p = person(b.user_id);
   const r = resById(b.resource_id);
   const s = new Date(b.start_at), e = new Date(b.end_at);
+  const ended = e <= new Date();
+  const mine = b.user_id === me();
+  const note = ended
+    ? 'This booking has finished, so it can no longer be changed.'
+    : `Only ${esc(firstName(p.display_name))} or a lab admin can change this booking. Contact them if you need this slot.`;
   dlg.innerHTML = `
   <div class="sheet">
     <header><h2>${esc(r?.name || 'Booking')}</h2><button type="button" class="x" data-close aria-label="Close">×</button></header>
     <div class="sheet-body">
       <dl class="info">
-        <dt>Booked by</dt><dd>${esc(p.display_name)}${p.email ? `<br><span class="muted">${esc(p.email)}</span>` : ''}</dd>
+        <dt>Booked by</dt><dd>${mine ? 'You' : esc(p.display_name)}${p.email && !mine ? `<br><span class="muted">${esc(p.email)}</span>` : ''}</dd>
         <dt>When</dt><dd>${L.fmtDayLong(s)}<br><span class="mono">${L.timeOf(s)}–${L.timeOf(e)}</span> (${L.duration((e - s) / 60000)})</dd>
         ${b.note ? `<dt>Purpose</dt><dd>${esc(b.note)}</dd>` : ''}
       </dl>
-      <p class="muted small">Only ${esc(firstName(p.display_name))} or a lab admin can change this booking. Contact them if you need this slot.</p>
+      <p class="muted small">${note}</p>
     </div>
-    <footer><span class="spacer"></span><button type="button" class="btn" data-close>Close</button></footer>
+    <footer>
+      ${r ? `<button type="button" class="btn ghost" data-action="open-resource" data-res="${r.id}">About ${esc(r.name)}</button>` : ''}
+      <span class="spacer"></span><button type="button" class="btn" data-close>Close</button>
+    </footer>
   </div>`;
-  dlg.showModal();
+  showDlg();
+}
+
+// ---------- Resource details ----------
+async function openResourceDetails(resId) {
+  const r = resById(resId);
+  if (!r) return;
+  const now = new Date();
+  let upcoming = [];
+  try {
+    upcoming = (await state.be.listBookings(now.toISOString(), L.addDays(now, 14).toISOString(), { resourceId: r.id })).slice(0, 6);
+  } catch { upcoming = []; }
+  const st = STATUS[r.status] || STATUS.unavailable;
+  const canBook = r.status === 'available' || isAdmin();
+  const nextList = upcoming.length
+    ? `<ul class="res-next">${upcoming.map((b) => {
+        const s = new Date(b.start_at), e = new Date(b.end_at);
+        return `<li><span class="mono">${L.fmtDay(s)} · ${L.timeOf(s)}–${L.timeOf(e)}</span><span>${b.user_id === me() ? 'You' : esc(person(b.user_id).display_name)}</span></li>`;
+      }).join('')}</ul>`
+    : '<p class="muted small">No bookings in the next two weeks.</p>';
+
+  dlg.innerHTML = `
+  <div class="sheet">
+    <header>
+      <div class="res-head">${r.code ? `<span class="kind-tag">${esc(r.code)}</span>` : ''}<h2>${esc(r.name)}</h2></div>
+      <button type="button" class="x" data-close aria-label="Close">×</button>
+    </header>
+    <div class="sheet-body">
+      <p class="res-status"><span class="pill ${st.cls}">${st.label}</span>${r.status_note ? ` <span class="muted">${esc(r.status_note)}</span>` : ''}</p>
+      <dl class="info">
+        <dt>ID</dt><dd class="mono">${esc(r.code || '–')}</dd>
+        <dt>Type</dt><dd>${esc(r.kind)}</dd>
+        <dt>Location / setup</dt><dd>${esc(r.location || '–')}</dd>
+        <dt>Notes</dt><dd class="res-notes">${esc(r.description || '–')}</dd>
+      </dl>
+      <div class="res-section">
+        <h3>Next two weeks</h3>
+        ${nextList}
+      </div>
+    </div>
+    <footer>
+      ${isAdmin() ? `<button type="button" class="btn ghost" data-action="edit-resource" data-id="${r.id}">Edit details</button>` : ''}
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost" data-close>Close</button>
+      ${canBook ? `<button type="button" class="btn primary" data-action="book-resource" data-res="${r.id}">Book ${esc(r.name)}</button>` : ''}
+    </footer>
+  </div>`;
+  showDlg();
 }
 
 // ---------- Confirmation dialog (window.confirm is not used) ----------
@@ -914,7 +989,7 @@ async function renderMine(view) {
     return `<article class="mb-row">
       <div class="mb-time">${L.timeOf(s)}–${L.timeOf(e)}<small>${L.duration((e - s) / 60000)}</small></div>
       <div class="mb-main">
-        <div class="mb-title">${r ? `<span class="kind-tag">${esc(r.kind)}</span>` : ''}<b>${esc(r?.name || 'Deleted resource')}</b>${live ? '<span class="pill accent">In progress</span>' : ''}</div>
+        <div class="mb-title">${r ? `<span class="kind-tag" title="${esc(r.kind)}">${esc(r.code || r.kind)}</span><button type="button" class="res-link" data-action="open-resource" data-res="${r.id}" title="${esc(resTitle(r))}">${esc(r.name)}</button>` : '<b>Deleted resource</b>'}${live ? '<span class="pill accent">In progress</span>' : ''}</div>
         ${b.note ? `<p class="mb-note">${esc(b.note)}</p>` : ''}
         ${seriesNote}
         ${upcoming && r && r.status !== 'available' ? `<p class="mb-warn">${esc(r.name)} is currently marked as ${esc(STATUS[r.status].label.toLowerCase())}${r.status_note ? `: ${esc(r.status_note)}` : ''}.</p>` : ''}
@@ -961,10 +1036,12 @@ async function renderManage(view) {
   if (tab === 'resources') {
     body = state.resources.length ? `
     <div class="table-wrap"><table class="tbl">
-      <thead><tr><th>Resource</th><th>Type</th><th>Status</th><th class="actions"><span hidden>Actions</span></th></tr></thead>
+      <thead><tr><th>ID</th><th>Resource and notes</th><th>Type</th><th>Location / setup</th><th>Status</th><th class="actions"><span hidden>Actions</span></th></tr></thead>
       <tbody>${state.resources.map((r) => `<tr>
-        <td><b>${esc(r.name)}</b>${r.location ? ` <span class="muted">· ${esc(r.location)}</span>` : ''}${r.description ? `<span class="cell-sub">${esc(r.description)}</span>` : ''}</td>
-        <td><span class="kind-tag">${esc(r.kind)}</span></td>
+        <td class="mono">${esc(r.code || '–')}</td>
+        <td><button type="button" class="res-link" data-action="open-resource" data-res="${r.id}">${esc(r.name)}</button>${r.description ? `<span class="cell-sub">${esc(r.description)}</span>` : ''}</td>
+        <td>${esc(r.kind)}</td>
+        <td>${esc(r.location || '–')}</td>
         <td>
           <select class="status-select st-${esc(r.status)}" data-change="set-status" data-id="${r.id}" aria-label="Status of ${esc(r.name)}">
             ${Object.entries(STATUS).map(([k, s]) => `<option value="${k}" ${k === r.status ? 'selected' : ''}>${s.label}</option>`).join('')}
@@ -977,7 +1054,7 @@ async function renderManage(view) {
         </td>
       </tr>`).join('')}</tbody>
     </table></div>`
-      : `<div class="empty"><h2>No resources yet</h2><p>Add each PC and robot your group books. Give them names people recognise, such as the label on the machine.</p><button type="button" class="btn primary" data-action="new-resource">${ICON.plus}Add resource</button></div>`;
+      : `<div class="empty"><h2>No resources yet</h2><p>Add each robot and computer your group books. Give them names people recognise, such as the label on the machine.</p><button type="button" class="btn primary" data-action="new-resource">${ICON.plus}Add resource</button></div>`;
   } else {
     const people = [...state.profiles.values()].sort((a, z) => (a.role === 'pending' ? -1 : 0) - (z.role === 'pending' ? -1 : 0) || a.display_name.localeCompare(z.display_name));
     body = `
@@ -999,7 +1076,7 @@ async function renderManage(view) {
 
   view.innerHTML = `
   <div class="page-head">
-    <div><h1 class="page-title">Manage</h1><p class="page-sub">${tab === 'resources' ? 'PCs, robots and their status.' : 'Who can sign in and what they can do.'}</p></div>
+    <div><h1 class="page-title">Manage</h1><p class="page-sub">${tab === 'resources' ? 'Robots and computers: their details and status. Everyone sees these details when they open a resource.' : 'Who can sign in and what they can do.'}</p></div>
     <div class="page-tools">
       <div class="seg" role="group" aria-label="Manage section">
         <button type="button" data-action="manage-tab" data-tab="resources" aria-pressed="${tab === 'resources'}">Resources</button>
@@ -1011,34 +1088,57 @@ async function renderManage(view) {
   ${body}`;
 }
 
+/** Next free ID for a type, e.g. R06 for robots or C06 for computers. */
+function suggestCode(kind) {
+  const prefix = (kind || 'X').trim().charAt(0).toUpperCase() || 'X';
+  const used = state.resources.map((r) => r.code || '').filter((c) => c.toUpperCase().startsWith(prefix))
+    .map((c) => parseInt(c.slice(1), 10)).filter((n) => !Number.isNaN(n));
+  return `${prefix}${L.pad((used.length ? Math.max(...used) : 0) + 1)}`;
+}
+
 function openResourceForm(r = null) {
-  const kindList = [...new Set(['PC', 'Robot', ...kinds()])];
+  const kindList = [...new Set(['Robot', 'Computer', ...kinds()])];
+  const kind = r?.kind || 'Robot';
   dlg.innerHTML = `
   <form class="sheet" id="res-form" novalidate>
-    <header><h2>${r ? 'Edit resource' : 'Add resource'}</h2><button type="button" class="x" data-close aria-label="Close">×</button></header>
+    <header><h2>${r ? `Edit ${esc(r.name)}` : 'Add resource'}</h2><button type="button" class="x" data-close aria-label="Close">×</button></header>
     <div class="sheet-body">
-      <div class="field"><label for="rs-name">Name</label><input id="rs-name" required maxlength="80" value="${esc(r?.name || '')}" placeholder="e.g. PC-04 GPU workstation"></div>
-      <div class="row2">
-        <div class="field"><label for="rs-kind">Type</label><input id="rs-kind" list="rs-kinds" maxlength="30" value="${esc(r?.kind || 'PC')}"><datalist id="rs-kinds">${kindList.map((k) => `<option value="${esc(k)}">`).join('')}</datalist></div>
-        <div class="field"><label for="rs-loc">Location <em>(optional)</em></label><input id="rs-loc" maxlength="60" value="${esc(r?.location || '')}" placeholder="e.g. Bay A"></div>
+      <div class="row2 row-id">
+        <div class="field"><label for="rs-code">ID</label><input id="rs-code" class="mono" maxlength="12" value="${esc(r ? r.code || '' : suggestCode(kind))}" placeholder="e.g. R06"></div>
+        <div class="field"><label for="rs-name">Name</label><input id="rs-name" required maxlength="80" value="${esc(r?.name || '')}" placeholder="e.g. FR3 - Aurora"></div>
       </div>
-      <div class="field"><label for="rs-desc">Description <em>(optional)</em></label><input id="rs-desc" maxlength="200" value="${esc(r?.description || '')}" placeholder="Specs, attachments, anything people should know"></div>
       <div class="row2">
-        <div class="field"><label for="rs-status">Status</label><select id="rs-status">${Object.entries(STATUS).map(([k, s]) => `<option value="${k}" ${k === (r?.status || 'available') ? 'selected' : ''}>${s.label}</option>`).join('')}</select></div>
+        <div class="field"><label for="rs-kind">Type</label><input id="rs-kind" list="rs-kinds" maxlength="30" value="${esc(kind)}"><datalist id="rs-kinds">${kindList.map((k) => `<option value="${esc(k)}">`).join('')}</datalist></div>
+        <div class="field"><label for="rs-loc">Location / setup</label><input id="rs-loc" maxlength="60" value="${esc(r?.location || '')}" placeholder="e.g. ACL-DIF"></div>
+      </div>
+      <div class="field"><label for="rs-desc">Notes <em>(model, gripper, sensors, specs…)</em></label><textarea id="rs-desc" maxlength="1000" rows="3" placeholder="e.g. Franka-Research 3: Robotiq 85 parallel gripper mounted">${esc(r?.description || '')}</textarea></div>
+      <div class="row2">
+        <div class="field"><label for="rs-status">Status</label><select id="rs-status">${Object.entries(STATUS).map(([k, st]) => `<option value="${k}" ${k === (r?.status || 'available') ? 'selected' : ''}>${st.label}</option>`).join('')}</select></div>
         <div class="field"><label for="rs-note">Status note <em>(optional)</em></label><input id="rs-note" maxlength="120" value="${esc(r?.status_note || '')}" placeholder="e.g. Waiting for replacement part"></div>
       </div>
-      <p class="muted small">Members cannot make new bookings on a resource unless its status is Available. Existing bookings stay, and their owners see a warning.</p>
+      <p class="muted small">Everyone sees these details when they open the resource from the calendar or from My bookings. Members cannot make new bookings unless the status is Available.</p>
       <div id="rs-error" class="form-error" role="alert"></div>
     </div>
     <footer><span class="spacer"></span><button type="button" class="btn ghost" data-close>Cancel</button><button type="submit" class="btn primary">${r ? 'Save changes' : 'Add resource'}</button></footer>
   </form>`;
-  dlg.showModal();
-  dlg.querySelector('#res-form').addEventListener('submit', async (ev) => {
+  showDlg();
+  const f = dlg.querySelector('#res-form');
+  // For a new resource, keep the suggested ID in step with the type until the admin types their own.
+  if (!r) {
+    const code = f.querySelector('#rs-code');
+    let auto = true;
+    code.addEventListener('input', () => { auto = false; });
+    f.querySelector('#rs-kind').addEventListener('input', (ev) => { if (auto) code.value = suggestCode(ev.target.value); });
+  }
+  f.addEventListener('submit', async (ev) => {
     ev.preventDefault();
     const q = (id) => dlg.querySelector('#' + id).value.trim();
     const err = dlg.querySelector('#rs-error');
     if (!q('rs-name')) { err.textContent = 'Give the resource a name.'; return; }
-    const data = { name: q('rs-name'), kind: q('rs-kind') || 'Other', location: q('rs-loc'), description: q('rs-desc'), status: q('rs-status'), status_note: q('rs-note') };
+    const code = q('rs-code').toUpperCase();
+    const clash = code && state.resources.find((x) => x.id !== r?.id && (x.code || '').toUpperCase() === code);
+    if (clash) { err.textContent = `ID ${code} is already used by ${clash.name}. Choose another ID.`; return; }
+    const data = { code, name: q('rs-name'), kind: q('rs-kind') || 'Other', location: q('rs-loc'), description: q('rs-desc'), status: q('rs-status'), status_note: q('rs-note') };
     try {
       await state.be.saveResource(r ? { id: r.id, ...data } : data);
       dlg.close();
@@ -1126,17 +1226,38 @@ document.addEventListener('click', async (ev) => {
       }
       const rect = el.getBoundingClientRect();
       const frac = el.dataset.axis === 'v' ? (ev.clientY - rect.top) / rect.height : (ev.clientX - rect.left) / rect.width;
-      let start = RULES.dayStart * 60 + Math.floor(Math.max(0, Math.min(0.999, frac)) * DAY_MIN / RULES.step) * RULES.step;
-      start = Math.min(start, RULES.dayEnd * 60 - RULES.step);
+      const clickedMin = RULES.dayStart * 60 + Math.max(0, Math.min(0.999, frac)) * DAY_MIN;
+      const dayKey = el.dataset.date;
+      const now = new Date();
+      const nowKey = L.dateKey(now);
+      // Past days, and the part of today that has gone, cannot be booked.
+      if (dayKey < nowKey || (dayKey === nowKey && clickedMin < L.minuteOfDay(now))) {
+        toast('That time has already passed. Pick a time from now onwards.', 'err');
+        break;
+      }
+      let start = RULES.dayStart * 60 + Math.floor((clickedMin - RULES.dayStart * 60) / RULES.step) * RULES.step;
+      if (dayKey === nowKey) start = Math.max(start, Math.ceil(L.minuteOfDay(now) / RULES.step) * RULES.step);
+      if (start > RULES.dayEnd * 60 - RULES.step) {
+        toast('There is no bookable time left today. Pick another day.', 'err');
+        break;
+      }
       const end = Math.min(start + 60, RULES.dayEnd * 60);
-      openBookingForm({ resourceId: r.id, dateKey: el.dataset.date, startTime: L.hm(start), endTime: L.hm(end) });
+      openBookingForm({ resourceId: r.id, dateKey: dayKey, startTime: L.hm(start), endTime: L.hm(end) });
       break;
     }
     case 'open-booking': {
       const b = findBooking(el.dataset.id);
       if (!b) break;
-      if (b.user_id === me() || isAdmin()) openBookingForm({ booking: b });
+      const ended = new Date(b.end_at) <= new Date();
+      if (!ended && (b.user_id === me() || isAdmin())) openBookingForm({ booking: b });
       else openBookingInfo(b);
+      break;
+    }
+    case 'open-resource': openResourceDetails(el.dataset.res); break;
+    case 'book-resource': {
+      const r = resById(el.dataset.res);
+      dlg.close();
+      if (r) openBookingForm({ resourceId: r.id });
       break;
     }
     case 'new-booking': openBookingForm(); break;

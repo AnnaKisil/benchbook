@@ -6,11 +6,12 @@ BenchBook is a static web app (plain HTML, CSS and JavaScript, no build step), s
 
 ## Features
 
-- **Calendar of every resource.** Week view (resources down the side, Monday to Friday across) and day view (one column per resource). Each booking shows who made it; hover or click for times, purpose and contact email. Filter by type (PC, Robot, …).
+- **Calendar of every resource.** Week view (resources down the side, Monday to Friday across) and day view (one column per resource). Each booking shows who made it; hover or click for times, purpose and contact email. Filter by type (Robot, Computer, …). Time that has already passed is shaded and cannot be booked.
 - **Book a resource for a time period.** Click an empty slot or use *New booking*. Pick a resource, date, start and end time.
 - **Book several days in one go.** Set a *Last day* and BenchBook books the same time on every weekday in the range, skipping weekends. The whole run is created together or not at all.
 - **Clear conflict messages.** If any part of the request is taken, you see which days and times, **who** booked them (name and email) and their stated purpose. BenchBook also suggests other free resources of the same type and offers to book only the free days.
-- **Lab hours only.** Bookings are limited to Monday to Friday, 08:00 to 18:00 (configurable).
+- **Lab hours only.** Bookings are limited to Monday to Friday, 08:00 to 18:00 (configurable). Nobody, admins included, can book a time that has already passed.
+- **Resource details.** Click a robot or computer in the calendar, in *My bookings* or in *Manage* to see its ID, type, location / setup and notes, its status, and who has it booked over the next two weeks. Admins can edit these details.
 - **My bookings.** Your upcoming and past bookings, grouped by day. Change the time, date, resource or purpose, or delete a single day or a whole multi-day booking.
 - **Two access levels**, plus approval for new accounts:
 
@@ -22,7 +23,7 @@ BenchBook is a static web app (plain HTML, CSS and JavaScript, no build step), s
 | Book or edit on behalf of someone else | | ✓ |
 | Edit or delete anyone's booking | | ✓ |
 | Override a conflict (the other booking is shortened or removed) | | ✓ |
-| Add, edit and delete resources | | ✓ |
+| Add, edit and delete resources and their details | | ✓ |
 | Set resource status: Available, Unavailable, Maintenance, Broken | | ✓ |
 | Approve new accounts and change access levels | | ✓ |
 
@@ -53,10 +54,11 @@ python3 -m http.server 8080
 
 1. Sign up at [supabase.com](https://supabase.com) and create a new project. Choose a region near you and save the database password somewhere safe.
 2. Open **SQL Editor → New query**, paste the whole of [`supabase/schema.sql`](supabase/schema.sql) and press **Run**. This creates the tables, the booking rules and the access rules.
-3. Open **Authentication → URL Configuration**:
+3. Optional: open a new query, paste [`supabase/resources.sql`](supabase/resources.sql) and press **Run** to load the ACL-DIF robots and computers (R01–R05, C01–C05). You can also add resources by hand in the app later.
+4. Open **Authentication → URL Configuration**:
    - **Site URL**: your GitHub Pages address, for example `https://my-lab.github.io/benchbook/`
    - **Redirect URLs**: add the same address. These are used by confirmation and password-reset emails.
-4. Open **Settings → API Keys** and copy the **Publishable key** (it starts with `sb_publishable_`). The legacy **anon** key works too. The **Project URL** is shown in the project's **Connect** dialog and on the project home page.
+5. Open **Settings → API Keys** and copy the **Publishable key** (it starts with `sb_publishable_`). The legacy **anon** key works too. The **Project URL** is shown in the project's **Connect** dialog and on the project home page.
 
 ### 3. Connect the app to the database
 
@@ -76,7 +78,7 @@ The publishable key is meant to be public. Everything is protected by row-level 
 
 1. Open the app and choose **Create an account**. **The first account ever created becomes the admin.** Everyone after that starts as *Waiting for approval*.
 2. Confirm your email if Supabase asks you to (this is on by default; you can turn it off under **Authentication → Providers → Email**).
-3. Under **Manage → Resources**, add your PCs and robots.
+3. Under **Manage → Resources**, check the robots and computers (or add them if you skipped `resources.sql`).
 4. Ask your group to create accounts, then approve them under **Manage → People** by setting them to *Member* (or *Admin*).
 
 If you ever lock yourself out, you can promote someone from the Supabase SQL Editor:
@@ -108,7 +110,8 @@ All rules are checked twice: in the browser, so people get instant, friendly mes
 
 - **No double booking**: a Postgres exclusion constraint (`bookings_no_overlap`) makes overlapping bookings on the same resource impossible, even if two people press *Book* at the same moment. Back-to-back bookings (one ends at 10:00, the next starts at 10:00) are allowed.
 - **Opening hours, weekdays, same-day bookings**: trigger `validate_booking`.
-- **Members** can only book for themselves, only on *Available* resources, and not in the past: trigger `validate_booking` plus row-level security policies.
+- **No bookings in the past**, for anyone: trigger `validate_booking`.
+- **Members** can only book for themselves and only on *Available* resources: trigger `validate_booking` plus row-level security policies.
 - **Roles**: only admins can change roles, and the last admin cannot be demoted: trigger `protect_profile`.
 - **Waiting accounts** cannot see resources or bookings: row-level security.
 
@@ -123,8 +126,13 @@ js/logic.js             Date, rule and conflict helpers (unit tested)
 js/backend/demo.js      Demo backend (browser storage)
 js/backend/supabase.js  Shared backend (Supabase)
 supabase/schema.sql     Database tables, rules and permissions
+supabase/resources.sql  The lab's robots and computers (optional import)
 tests/logic.test.js     Unit tests: `npm test` (Node 18+)
 ```
+
+## Updating an existing installation
+
+If you already set up Supabase with an earlier version, run `supabase/schema.sql` again in the SQL Editor. It keeps your data, adds the new resource ID column and updates the booking rules. Then run `supabase/resources.sql` if you want the ACL-DIF resources.
 
 ## Ideas for later
 

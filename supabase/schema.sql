@@ -24,8 +24,9 @@ create table if not exists public.profiles (
 
 create table if not exists public.resources (
   id          bigint generated always as identity primary key,
+  code        text not null default '',
   name        text not null,
-  kind        text not null default 'PC',
+  kind        text not null default 'Computer',
   location    text not null default '',
   description text not null default '',
   status      text not null default 'available'
@@ -33,6 +34,9 @@ create table if not exists public.resources (
   status_note text not null default '',
   created_at  timestamptz not null default now()
 );
+
+-- Upgrades from earlier versions of BenchBook.
+alter table public.resources add column if not exists code text not null default '';
 
 create table if not exists public.bookings (
   id          bigint generated always as identity primary key,
@@ -166,9 +170,14 @@ begin
         raise exception '% is % and cannot be booked right now.', res_name, res_status using errcode = '42501';
       end if;
     end if;
-    if (tg_op = 'INSERT' or new.start_at <> old.start_at) and new.start_at < now() - interval '1 minute' then
-      raise exception 'Bookings cannot start in the past.' using errcode = '22023';
-    end if;
+  end if;
+
+  -- Nobody, admins included, can create a booking or move its start into the past.
+  -- (Changes made from the SQL editor, where auth.uid() is null, are allowed.)
+  if auth.uid() is not null
+     and (tg_op = 'INSERT' or new.start_at <> old.start_at)
+     and new.start_at < now() - interval '1 minute' then
+    raise exception 'Bookings cannot start in the past.' using errcode = '22023';
   end if;
   return new;
 end $$;
@@ -235,10 +244,5 @@ create policy "bookings: delete own, admins delete any" on public.bookings
   using (public.is_admin() or (public.is_member() and user_id = auth.uid()));
 
 -- ---------------------------------------------------------------------------
--- Optional: example resources. Uncomment, edit and run to get started.
+-- To load the lab's robots and computers, run supabase/resources.sql next.
 -- ---------------------------------------------------------------------------
--- insert into public.resources (name, kind, location, description) values
---   ('PC-01 GPU workstation', 'PC',    'Bay A',  'RTX 4090, 128 GB RAM'),
---   ('PC-02 GPU workstation', 'PC',    'Bay A',  'RTX 4090, 64 GB RAM'),
---   ('UR5e arm',              'Robot', 'Cell 1', '6-DoF arm with gripper'),
---   ('TurtleBot 4 (A)',       'Robot', 'Arena',  'Mobile base');

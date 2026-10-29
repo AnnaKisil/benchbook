@@ -4,7 +4,7 @@
 
 import * as L from '../logic.js';
 
-const DB_KEY = 'benchbook-demo-v1';
+const DB_KEY = 'benchbook-demo-v2';
 const SESSION_KEY = 'benchbook-demo-session';
 const memory = {};
 const store = {
@@ -30,38 +30,43 @@ function seed() {
     { id: 'u-erin', email: 'erin@lab.example', display_name: 'Erin Walsh', role: 'pending' },
   ].map((u) => ({ ...u, password: 'demo', created_at: now }));
 
+  const lab = 'ACL-DIF';
   const resources = [
-    { id: 1, name: 'PC-01 GPU workstation', kind: 'PC', location: 'Bay A', description: 'RTX 4090, 128 GB RAM, Ubuntu 22.04', status: 'available', status_note: '' },
-    { id: 2, name: 'PC-02 GPU workstation', kind: 'PC', location: 'Bay A', description: 'RTX 4090, 64 GB RAM, Ubuntu 22.04', status: 'available', status_note: '' },
-    { id: 3, name: 'PC-03 Simulation rig', kind: 'PC', location: 'Bay B', description: 'Isaac Sim and Gazebo', status: 'maintenance', status_note: 'OS upgrade in progress' },
-    { id: 4, name: 'UR5e arm', kind: 'Robot', location: 'Cell 1', description: '6-DoF arm with 2-finger gripper', status: 'available', status_note: '' },
-    { id: 5, name: 'Franka Research 3', kind: 'Robot', location: 'Cell 2', description: '7-DoF arm with torque sensing', status: 'available', status_note: '' },
-    { id: 6, name: 'TurtleBot 4 (A)', kind: 'Robot', location: 'Arena', description: 'Mobile base with lidar and depth camera', status: 'available', status_note: '' },
-    { id: 7, name: 'TurtleBot 4 (B)', kind: 'Robot', location: 'Arena', description: 'Mobile base with lidar and depth camera', status: 'broken', status_note: 'Left wheel encoder faulty' },
-  ].map((r) => ({ ...r, created_at: now }));
+    { code: 'R01', name: 'FR3 - Aurora', kind: 'Robot', description: 'Franka-Research 3: For maintenance' },
+    { code: 'R02', name: 'FR3 - Flora', kind: 'Robot', description: 'Franka-Research 3: Mostly for scooping - Robotiq 85 parallel mounted' },
+    { code: 'R03', name: 'FP3', kind: 'Robot', description: 'Franka Production 3: Grey FR3 - Franka Hand' },
+    { code: 'R04', name: 'UR7e', kind: 'Robot', description: 'Universal Robotics 7 - F/T sensor, Robotiq 85 gripper' },
+    { code: 'R05', name: 'FER', kind: 'Robot', description: 'Franka Emika Panda - Franka Hand' },
+    { code: 'C01', name: 'Hadrian', kind: 'Computer', description: 'i7/4090/64' },
+    { code: 'C02', name: 'Tiberius', kind: 'Computer', description: 'i7/5090/128' },
+    { code: 'C03', name: 'Augustus', kind: 'Computer', description: 'Tx 9970 x/509/128' },
+    { code: 'C04', name: 'Sim2real', kind: 'Computer', description: 'i7/4090/64' },
+    { code: 'C05', name: '3080', kind: 'Computer', description: 'i7/3080/64' },
+  ].map((r, i) => ({ id: i + 1, location: lab, status: 'available', status_note: '', created_at: now, ...r }));
+  const R = Object.fromEntries(resources.map((r) => [r.code, r.id]));
 
   // Example bookings around the current week, so the calendar is never empty.
   const monday = L.startOfWeek(L.nextWeekday(new Date()));
   let id = 1;
   const bookings = [];
-  const add = (day, res, user, s, e, note = '', series = null) => {
+  const add = (day, code, user, s, e, note = '', series = null) => {
     const k = L.dateKey(L.addDays(monday, day));
-    bookings.push({ id: id++, resource_id: res, user_id: user, start_at: L.at(k, s).toISOString(), end_at: L.at(k, e).toISOString(), note, series_id: series, created_at: now });
+    bookings.push({ id: id++, resource_id: R[code], user_id: user, start_at: L.at(k, s).toISOString(), end_at: L.at(k, e).toISOString(), note, series_id: series, created_at: now });
   };
-  for (const d of [0, 1, 2]) add(d, 4, 'u-ben', '09:00', '12:00', 'Grasping trials', 'demo-series-1');
-  add(0, 5, 'u-dev', '13:00', '17:30', 'Impedance control tests');
-  add(1, 1, 'u-chloe', '10:00', '16:00', 'Training the segmentation model');
-  add(2, 2, 'u-alice', '08:00', '18:00', 'Benchmark run');
-  add(3, 5, 'u-chloe', '09:30', '12:00', 'Demo for visitors');
-  add(3, 6, 'u-dev', '14:00', '16:00', 'SLAM data collection');
-  add(3, 1, 'u-ben', '08:30', '11:00');
-  add(4, 1, 'u-ben', '09:00', '11:00', 'Paper figures');
-  add(4, 4, 'u-alice', '14:00', '17:00', 'Gripper calibration');
-  for (const d of [7, 8]) add(d, 2, 'u-dev', '08:00', '18:00', 'Thesis simulations', 'demo-series-2');
-  add(10, 4, 'u-ben', '13:00', '15:00', 'Grasping trials');
-  add(9, 5, 'u-chloe', '10:00', '12:30');
+  for (const d of [0, 1, 2]) add(d, 'R04', 'u-ben', '09:00', '12:00', 'Grasping trials', 'demo-series-1');
+  add(0, 'R02', 'u-dev', '13:00', '17:30', 'Scooping experiments');
+  add(1, 'C02', 'u-chloe', '10:00', '16:00', 'Training the segmentation model');
+  add(2, 'C03', 'u-alice', '08:00', '18:00', 'Benchmark run');
+  add(3, 'R03', 'u-chloe', '09:30', '12:00', 'Demo for visitors');
+  add(3, 'C04', 'u-dev', '14:00', '16:00', 'Sim-to-real transfer tests');
+  add(3, 'C01', 'u-ben', '08:30', '11:00');
+  add(4, 'C01', 'u-ben', '09:00', '11:00', 'Paper figures');
+  add(4, 'R05', 'u-alice', '14:00', '17:00', 'Gripper calibration');
+  for (const d of [7, 8]) add(d, 'C03', 'u-dev', '08:00', '18:00', 'Thesis simulations', 'demo-series-2');
+  add(10, 'R04', 'u-ben', '13:00', '15:00', 'Grasping trials');
+  add(9, 'R02', 'u-chloe', '10:00', '12:30');
 
-  return { users, resources, bookings, nextResourceId: 8, nextBookingId: id };
+  return { users, resources, bookings, nextResourceId: resources.length + 1, nextBookingId: id };
 }
 
 export async function createBackend(cfg) {
@@ -100,9 +105,9 @@ export async function createBackend(cfg) {
       if (row.user_id !== u.id) throw fail('You can only book for yourself.', 'permission');
       const slotChanged = !before || before.start_at !== row.start_at || before.end_at !== row.end_at || before.resource_id !== row.resource_id;
       if (slotChanged && res.status !== 'available') throw fail(`${res.name} is ${res.status} and cannot be booked right now.`);
-      const startChanged = !before || before.start_at !== row.start_at;
-      if (startChanged && s < new Date(Date.now() - 60000)) throw fail('Bookings cannot start in the past.');
     }
+    const startChanged = !before || before.start_at !== row.start_at;
+    if (startChanged && s < new Date(Date.now() - 60000)) throw fail('Bookings cannot start in the past.');
   };
   // Same as the bookings_no_overlap exclusion constraint.
   const assertFree = (rows, ignore = new Set()) => {
@@ -160,7 +165,7 @@ export async function createBackend(cfg) {
 
     async listResources() {
       requireMember();
-      return clone(db.resources).sort((a, b) => a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name));
+      return clone(db.resources).sort((a, b) => a.kind.localeCompare(b.kind) || (a.code || '').localeCompare(b.code || '') || a.name.localeCompare(b.name));
     },
     async saveResource(resource) {
       requireAdmin();
@@ -170,7 +175,7 @@ export async function createBackend(cfg) {
         Object.assign(r, resource); save();
         return clone(r);
       }
-      const r = { status: 'available', status_note: '', description: '', location: '', ...resource, id: db.nextResourceId++, created_at: new Date().toISOString() };
+      const r = { code: '', status: 'available', status_note: '', description: '', location: '', ...resource, id: db.nextResourceId++, created_at: new Date().toISOString() };
       db.resources.push(r); save();
       return clone(r);
     },
