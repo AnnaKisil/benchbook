@@ -440,10 +440,115 @@ function resourceOptions(selectedId, keepId) {
     return `<option value="${r.id}" ${r.id === selectedId ? 'selected' : ''} ${disabled ? 'disabled' : ''}>${esc(r.name)}${off ? ` (${STATUS[r.status].label.toLowerCase()})` : ''}</option>`;
   }).join('')}</optgroup>`).join('');
 }
-function timeSelect(id, value, which) {
+// ---------- Time picker ----------
+// A small custom list instead of a native <select>. Native dropdowns inside a
+// modal dialog close immediately in some browsers; this one stays open until
+// a time is picked, Escape is pressed or the person clicks elsewhere.
+const CHEVRON = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M5.5 8 10 12.5 14.5 8" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+function timePicker(id, value, which) {
   const list = which === 'start' ? TIMES.slice(0, -1) : TIMES.slice(1);
-  return `<select id="${id}">${list.map((t) => `<option ${t === value ? 'selected' : ''}>${t}</option>`).join('')}</select>`;
+  return `<div class="tp" data-which="${which}">
+    <button type="button" class="tp-btn" id="${id}" data-value="${value}" aria-haspopup="listbox" aria-expanded="false"><span class="mono tp-val">${value}</span>${CHEVRON}</button>
+    <div class="tp-list" role="listbox" aria-labelledby="${id}" hidden>${list.map((t) =>
+      `<button type="button" class="tp-opt" role="option" data-time="${t}" aria-selected="${t === value}" tabindex="-1"><span>${t}</span><small></small></button>`).join('')}</div>
+  </div>`;
 }
+
+function closePickers(except) {
+  document.querySelectorAll('.tp-list:not([hidden])').forEach((list) => {
+    if (list === except) return;
+    list.hidden = true;
+    list.parentElement.querySelector('.tp-btn').setAttribute('aria-expanded', 'false');
+  });
+}
+
+function openPicker(btn, focusSelected = false) {
+  const list = btn.parentElement.querySelector('.tp-list');
+  closePickers(list);
+  const value = btn.dataset.value;
+  const isEnd = btn.parentElement.dataset.which === 'end';
+  const start = isEnd ? L.minutesOf(dlg.querySelector('#bk-start').dataset.value) : null;
+  list.querySelectorAll('.tp-opt').forEach((o) => {
+    const t = o.dataset.time;
+    o.setAttribute('aria-selected', String(t === value));
+    if (isEnd) {
+      const len = L.minutesOf(t) - start;
+      o.disabled = len <= 0;
+      o.querySelector('small').textContent = len > 0 ? L.duration(len) : '';
+    }
+  });
+  // Position against the viewport so the list is never clipped by the dialog.
+  const r = btn.getBoundingClientRect();
+  const below = innerHeight - r.bottom - 12, above = r.top - 12;
+  const placeBelow = below >= 220 || below >= above;
+  const max = Math.max(140, Math.min(280, placeBelow ? below : above));
+  Object.assign(list.style, {
+    left: `${r.left}px`, width: `${r.width}px`, maxHeight: `${max}px`,
+    top: placeBelow ? `${r.bottom + 4}px` : 'auto',
+    bottom: placeBelow ? 'auto' : `${innerHeight - r.top + 4}px`,
+  });
+  list.hidden = false;
+  btn.setAttribute('aria-expanded', 'true');
+  const sel = list.querySelector('[aria-selected="true"]') || list.querySelector('.tp-opt:not(:disabled)');
+  if (sel) {
+    list.scrollTop = sel.offsetTop - list.clientHeight / 2 + sel.offsetHeight / 2;
+    if (focusSelected) sel.focus();
+  }
+}
+
+function setPickerValue(btn, t) {
+  btn.dataset.value = t;
+  btn.querySelector('.tp-val').textContent = t;
+  // Moving the start keeps the same length of booking where it fits.
+  if (btn.id === 'bk-start') {
+    const endBtn = dlg.querySelector('#bk-end');
+    const s = L.minutesOf(t), e = L.minutesOf(endBtn.dataset.value);
+    if (e <= s) {
+      const next = L.hm(Math.min(s + 60, RULES.dayEnd * 60));
+      endBtn.dataset.value = next;
+      endBtn.querySelector('.tp-val').textContent = next;
+    }
+  }
+  btn.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function choosePickerOption(opt) {
+  const btn = opt.closest('.tp').querySelector('.tp-btn');
+  closePickers();
+  setPickerValue(btn, opt.dataset.time);
+  btn.focus();
+}
+
+document.addEventListener('keydown', (ev) => {
+  const btn = ev.target.closest?.('.tp-btn');
+  const opt = ev.target.closest?.('.tp-opt');
+  if (btn && ['ArrowDown', 'ArrowUp', 'Enter', ' '].includes(ev.key)) {
+    ev.preventDefault();
+    openPicker(btn, true);
+  } else if (opt) {
+    const opts = [...opt.parentElement.querySelectorAll('.tp-opt:not(:disabled)')];
+    const i = opts.indexOf(opt);
+    if (ev.key === 'ArrowDown' || ev.key === 'ArrowUp') {
+      ev.preventDefault();
+      opts[Math.max(0, Math.min(opts.length - 1, i + (ev.key === 'ArrowDown' ? 1 : -1)))]?.focus();
+    } else if (ev.key === 'Escape') {
+      ev.preventDefault();
+      ev.stopPropagation(); // close the list, not the whole dialog
+      closePickers();
+      opt.closest('.tp').querySelector('.tp-btn').focus();
+    } else if (ev.key === 'Tab') {
+      closePickers();
+    }
+  } else if (ev.key === 'Escape' && document.querySelector('.tp-list:not([hidden])')) {
+    ev.preventDefault();
+    closePickers();
+  }
+}, true);
+document.addEventListener('scroll', (ev) => {
+  if (!ev.target.classList?.contains('tp-list')) closePickers();
+}, true);
+window.addEventListener('resize', () => closePickers());
 
 function defaultSlot(dayKey) {
   const now = new Date();
@@ -494,8 +599,8 @@ async function openBookingForm(opts = {}) {
         ${b ? '' : `<div class="field"><label for="bk-to">Last day <em>(optional, for several days)</em></label><input type="date" id="bk-to" ${minDate}></div>`}
       </div>
       <div class="row2">
-        <div class="field"><label for="bk-start">From</label>${timeSelect('bk-start', times.startTime, 'start')}</div>
-        <div class="field"><label for="bk-end">Until</label>${timeSelect('bk-end', times.endTime, 'end')}</div>
+        <div class="field"><label for="bk-start">From</label>${timePicker('bk-start', times.startTime, 'start')}</div>
+        <div class="field"><label for="bk-end">Until</label>${timePicker('bk-end', times.endTime, 'end')}</div>
       </div>
       ${ownerField}
       <div class="field"><label for="bk-note">Purpose <em>(optional)</em></label><input id="bk-note" maxlength="200" value="${esc(b?.note || '')}" placeholder="e.g. grasping trials, thesis simulations"></div>
@@ -534,8 +639,8 @@ function readForm() {
     resourceId: Number(q('bk-res').value),
     startKey: q('bk-from').value,
     endKey: q('bk-to')?.value || '',
-    startTime: q('bk-start').value,
-    endTime: q('bk-end').value,
+    startTime: q('bk-start').dataset.value,
+    endTime: q('bk-end').dataset.value,
     note: q('bk-note').value.trim(),
     userId: q('bk-user')?.value || form.booking?.user_id || me(),
     applySeries: Boolean(q('bk-series')?.checked),
@@ -951,6 +1056,17 @@ async function upcomingCount(resId) {
 
 // ---------- Events ----------
 document.addEventListener('click', async (ev) => {
+  // Time pickers: open, choose, or close when clicking anywhere else.
+  const tpBtn = ev.target.closest('.tp-btn');
+  const tpOpt = ev.target.closest('.tp-opt');
+  if (tpOpt) { if (!tpOpt.disabled) choosePickerOption(tpOpt); return; }
+  if (tpBtn) {
+    const list = tpBtn.parentElement.querySelector('.tp-list');
+    if (list.hidden) openPicker(tpBtn); else closePickers();
+    return;
+  }
+  if (!ev.target.closest('.tp-list')) closePickers();
+
   // Close dialogs from × / Cancel buttons and by clicking the backdrop.
   if (ev.target === dlg) { dlg.close(); return; }
   if (ev.target.closest('[data-close]')) { ev.target.closest('dialog')?.close(); return; }
