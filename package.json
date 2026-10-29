@@ -1,0 +1,12 @@
+{
+  "name": "benchbook",
+  "version": "0.1.0",
+  "description": "Open-source resource booking for research labs: PCs, robots and other shared equipment.",
+  "type": "module",
+  "private": true,
+  "license": "MIT",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "test": "node --test tests/*.test.js"
+  }
+}
