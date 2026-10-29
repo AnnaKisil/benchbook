@@ -165,9 +165,9 @@ function renderLogin(mode = 'signin', notice = '') {
       ${notice ? `<p class="notice">${esc(notice)}</p>` : ''}
       ${demoPick}
       <form id="auth-form" class="stack" data-mode="${mode}" novalidate>
-        ${mode === 'signup' ? '<label class="field"><span>Your name</span><input id="au-name" autocomplete="name" required></label>' : ''}
-        <label class="field"><span>Email</span><input id="au-email" type="email" autocomplete="email" required></label>
-        ${mode !== 'reset' ? `<label class="field"><span>Password${mode === 'signup' ? ' <em>(at least 8 characters)</em>' : ''}</span><input id="au-pass" type="password" autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}" required></label>` : ''}
+        ${mode === 'signup' ? '<div class="field"><label for="au-name">Your name</label><input id="au-name" autocomplete="name" required></div>' : ''}
+        <div class="field"><label for="au-email">Email</label><input id="au-email" type="email" autocomplete="email" required></div>
+        ${mode !== 'reset' ? `<div class="field"><label for="au-pass">Password${mode === 'signup' ? ' <em>(at least 8 characters)</em>' : ''}</label><input id="au-pass" type="password" autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}" required></div>` : ''}
         <div id="au-error" class="form-error" role="alert"></div>
         <button class="btn primary block" type="submit">${title}</button>
       </form>
@@ -240,7 +240,7 @@ function renderSetPassword() {
   <form class="sheet" id="pw-form">
     <header><h2>Choose a new password</h2></header>
     <div class="sheet-body">
-      <label class="field"><span>New password <em>(at least 8 characters)</em></span><input id="pw-new" type="password" autocomplete="new-password" required></label>
+      <div class="field"><label for="pw-new">New password <em>(at least 8 characters)</em></label><input id="pw-new" type="password" autocomplete="new-password" required></div>
       <div id="pw-error" class="form-error" role="alert"></div>
     </div>
     <footer><span class="spacer"></span><button class="btn primary" type="submit">Save password</button></footer>
@@ -479,26 +479,26 @@ async function openBookingForm(opts = {}) {
   form = { booking: b, seriesFuture };
 
   const ownerField = isAdmin() ? `
-    <label class="field"><span>${b ? 'Booked for' : 'Book for'}</span>
+    <div class="field"><label for="bk-user">${b ? 'Booked for' : 'Book for'}</label>
       <select id="bk-user">${bookers().map((p) => `<option value="${esc(p.id)}" ${p.id === owner ? 'selected' : ''}>${esc(p.display_name)}${p.id === me() ? ' (you)' : ''}</option>`).join('')}</select>
-    </label>` : '';
+    </div>` : '';
 
   dlg.innerHTML = `
   <form class="sheet" id="bk-form" novalidate>
     <header><h2>${b ? 'Edit booking' : 'New booking'}</h2><button type="button" class="x" data-close aria-label="Close">×</button></header>
     <div class="sheet-body">
       ${b && b.user_id !== me() ? `<p class="notice">You are editing ${esc(person(b.user_id).display_name)}'s booking as an admin.</p>` : ''}
-      <label class="field"><span>Resource</span><select id="bk-res">${resourceOptions(resId, b?.resource_id)}</select></label>
+      <div class="field"><label for="bk-res">Resource</label><select id="bk-res">${resourceOptions(resId, b?.resource_id)}</select></div>
       <div class="row2">
-        <label class="field"><span>${b ? 'Date' : 'First day'}</span><input type="date" id="bk-from" value="${dayKey}" ${minDate} required></label>
-        ${b ? '' : `<label class="field"><span>Last day <em>(optional, for several days)</em></span><input type="date" id="bk-to" ${minDate}></label>`}
+        <div class="field"><label for="bk-from">${b ? 'Date' : 'First day'}</label><input type="date" id="bk-from" value="${dayKey}" ${minDate} required></div>
+        ${b ? '' : `<div class="field"><label for="bk-to">Last day <em>(optional, for several days)</em></label><input type="date" id="bk-to" ${minDate}></div>`}
       </div>
       <div class="row2">
-        <label class="field"><span>From</span>${timeSelect('bk-start', times.startTime, 'start')}</label>
-        <label class="field"><span>Until</span>${timeSelect('bk-end', times.endTime, 'end')}</label>
+        <div class="field"><label for="bk-start">From</label>${timeSelect('bk-start', times.startTime, 'start')}</div>
+        <div class="field"><label for="bk-end">Until</label>${timeSelect('bk-end', times.endTime, 'end')}</div>
       </div>
       ${ownerField}
-      <label class="field"><span>Purpose <em>(optional)</em></span><input id="bk-note" maxlength="200" value="${esc(b?.note || '')}" placeholder="e.g. grasping trials, thesis simulations"></label>
+      <div class="field"><label for="bk-note">Purpose <em>(optional)</em></label><input id="bk-note" maxlength="200" value="${esc(b?.note || '')}" placeholder="e.g. grasping trials, thesis simulations"></div>
       ${showSeries ? `<label class="check"><input type="checkbox" id="bk-series"><span>Apply the new times, resource and purpose to all ${seriesFuture.length} upcoming days of this multi-day booking</span></label>` : ''}
       <p class="summary" id="bk-summary"></p>
       <div class="feedback" id="bk-feedback" aria-live="polite"></div>
@@ -912,15 +912,15 @@ function openResourceForm(r = null) {
   <form class="sheet" id="res-form" novalidate>
     <header><h2>${r ? 'Edit resource' : 'Add resource'}</h2><button type="button" class="x" data-close aria-label="Close">×</button></header>
     <div class="sheet-body">
-      <label class="field"><span>Name</span><input id="rs-name" required maxlength="80" value="${esc(r?.name || '')}" placeholder="e.g. PC-04 GPU workstation"></label>
+      <div class="field"><label for="rs-name">Name</label><input id="rs-name" required maxlength="80" value="${esc(r?.name || '')}" placeholder="e.g. PC-04 GPU workstation"></div>
       <div class="row2">
-        <label class="field"><span>Type</span><input id="rs-kind" list="rs-kinds" maxlength="30" value="${esc(r?.kind || 'PC')}"><datalist id="rs-kinds">${kindList.map((k) => `<option value="${esc(k)}">`).join('')}</datalist></label>
-        <label class="field"><span>Location <em>(optional)</em></span><input id="rs-loc" maxlength="60" value="${esc(r?.location || '')}" placeholder="e.g. Bay A"></label>
+        <div class="field"><label for="rs-kind">Type</label><input id="rs-kind" list="rs-kinds" maxlength="30" value="${esc(r?.kind || 'PC')}"><datalist id="rs-kinds">${kindList.map((k) => `<option value="${esc(k)}">`).join('')}</datalist></div>
+        <div class="field"><label for="rs-loc">Location <em>(optional)</em></label><input id="rs-loc" maxlength="60" value="${esc(r?.location || '')}" placeholder="e.g. Bay A"></div>
       </div>
-      <label class="field"><span>Description <em>(optional)</em></span><input id="rs-desc" maxlength="200" value="${esc(r?.description || '')}" placeholder="Specs, attachments, anything people should know"></label>
+      <div class="field"><label for="rs-desc">Description <em>(optional)</em></label><input id="rs-desc" maxlength="200" value="${esc(r?.description || '')}" placeholder="Specs, attachments, anything people should know"></div>
       <div class="row2">
-        <label class="field"><span>Status</span><select id="rs-status">${Object.entries(STATUS).map(([k, s]) => `<option value="${k}" ${k === (r?.status || 'available') ? 'selected' : ''}>${s.label}</option>`).join('')}</select></label>
-        <label class="field"><span>Status note <em>(optional)</em></span><input id="rs-note" maxlength="120" value="${esc(r?.status_note || '')}" placeholder="e.g. Waiting for replacement part"></label>
+        <div class="field"><label for="rs-status">Status</label><select id="rs-status">${Object.entries(STATUS).map(([k, s]) => `<option value="${k}" ${k === (r?.status || 'available') ? 'selected' : ''}>${s.label}</option>`).join('')}</select></div>
+        <div class="field"><label for="rs-note">Status note <em>(optional)</em></label><input id="rs-note" maxlength="120" value="${esc(r?.status_note || '')}" placeholder="e.g. Waiting for replacement part"></div>
       </div>
       <p class="muted small">Members cannot make new bookings on a resource unless its status is Available. Existing bookings stay, and their owners see a warning.</p>
       <div id="rs-error" class="form-error" role="alert"></div>

@@ -219,13 +219,13 @@ button { font: inherit; color: inherit; }
 }
 
 .field { display: grid; gap: 6px; min-width: 0; }
-.field > span {
+.field > label {
   font: 500 11.5px/1.2 var(--font-body);
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--muted);
 }
-.field > span em { font-style: normal; text-transform: none; letter-spacing: 0; opacity: 0.85; }
+.field > label em { font-style: normal; text-transform: none; letter-spacing: 0; opacity: 0.85; }
 input, select, textarea {
   width: 100%;
   min-width: 0;
